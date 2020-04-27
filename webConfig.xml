@@ -133,7 +133,7 @@
 		Note: No national charaters is supported in the match
     -->
 	<routing strict="false">
-		<map pattern="^procREST/" pgm="procrest" lib="*LIBL" />
+		<map pattern="procREST/" pgm="procrest" lib="*LIBL" />
 	</routing>
 
 	<xxx_routing strict="false">
