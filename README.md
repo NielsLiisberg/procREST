@@ -17,14 +17,17 @@ Look in the example belowe.
 
 ## 1) Creat environment
 
-On your IBM i: 
+Installation on your IBM i of `procREST` should be done with `git` which are available via `yum` - you can read more about [yum here](https://bitbucket.org/ibmi/opensource/src/master/docs/yum/).  
 
-First `ssh` or  `call qp2term` into `/www/procrest` and clone this repo into the IFS:
+On your IBM i 
+
+First `ssh` or  `call qp2term` into your IBM i, install git and clone this repo into the IFS:
 
 ```
+yum install git
 git -c http.sslVerify=false clone https://github.com/NielsLiisberg/procREST.git /www/procrest
-
 ``` 
+
 This will create a directory `/www/procrest`
 
 Now on a 5250 terminal:
