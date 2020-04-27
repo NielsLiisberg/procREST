@@ -110,8 +110,8 @@ It will ask for a schema, so we suply out library `procrest` where we put our pr
 ```
 http://myibmi:7007/procREST/procrest
 ```
-This will format the list of current exposed stord procedures in the schema (library) for now 
-this is simple HTML however a swagger/openAPI interface is on its way
+This will format the list of currently exposed stored procedures in the schema (library). For now 
+this is simple HTML however a swagger/openAPI interface is on its way.
 
 
 Here we have the `custlist` service and it takes a paramter `custname` - Nothing is btw case sensitive. So simply run it like lets run it:
