@@ -19,19 +19,22 @@ Look in the example belowe.
 
 On your IBM i: 
 
-```
-GO ICEBREAK
-ADDICESVR SVRID(PROCREST) TEXT('Stored Procedures as REST services') SVRPORT(7007)                               
-STRICESVR SVRID(PROCREST)
-```
-This will create a directory `/www/procrest`
-
-Now `ssh` or  `call qp2term` into `/www/procrest` and clone this repo into the IFS:
+First `ssh` or  `call qp2term` into `/www/procrest` and clone this repo into the IFS:
 
 ```
 git -c http.sslVerify=false clone https://github.com/NielsLiisberg/procREST.git /www/procrest
 
 ``` 
+This will create a directory `/www/procrest`
+
+Now on a 5250 terminal:
+
+```
+GO ICEBREAK
+ADDICESVR SVRID(PROCREST) TEXT('Stored Procedures as REST services') SVRPORT(7007)                               
+STRICESVR SVRID(PROCREST)
+```
+
 
 Compile the stored procedure router:
 
