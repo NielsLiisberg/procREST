@@ -101,12 +101,12 @@ call procrest.custList ();
 
 ## 3) Into action:
 
-From your browser type: 
+From your browser type the following, where `myibmi` is the name or TCP/IP address of your system: 
 ```
 http://myibmi:7007/procREST
 ```
 
-It will ask for a schema, so we suply out library procrest:
+It will ask for a schema, so we suply out library `procrest` where we put our procedure:
 ```
 http://myibmi:7007/procREST/procrest
 ```
