@@ -51,7 +51,7 @@ Add the procREST in the routing section in you webconfig.xml file in your server
 
 ```
 <routing strict="false">
-	<map pattern="^procREST/" pgm="procrest" lib="*LIBL" />
+	<map pattern="procREST/" pgm="procrest" lib="*LIBL" />
 </routing>
 ```
 
