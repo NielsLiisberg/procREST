@@ -89,7 +89,7 @@ ctl-opt bndDir('NOXDB':'ICEUTILITY':'QC2LE');
 	------ ---------- ------- ---------------------------------------------------
 	NLI    25.07.2018         New program
 	----------------------------------------------------------------------------- */
- /include noxdb 
+ /include qasphdr,jsonparser
  /include qasphdr,iceutility
  
 // --------------------------------------------------------------------
@@ -266,12 +266,12 @@ dcl-proc runService export;
 	sqlStmt = 'call ' + schemaName + '.' + procName + ' (' + parmlist + ')';
 
 	
-	pRows = json_sqlResultSet(
+	pResponse = json_sqlResultSet(
         sqlStmt: // The sql statement,
         1:  // from row,
         -1: // -1=*ALL number of rows
         JSON_META
-	}
+	);
     
 
 	if json_Error(pResponse);
