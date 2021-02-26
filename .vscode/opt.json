@@ -1,4 +1,6 @@
 {
-	"id" :"PROCREST",
-	"server" : "http://192.168.5.206:7007"  
+	"id":"PROCREST",
+	"server":"http://192.168.5.206:7007",
+	"env":"SVCUDV",
+	"path":"/www/procrest"
 }

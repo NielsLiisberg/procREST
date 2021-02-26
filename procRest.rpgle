@@ -257,15 +257,22 @@ dcl-proc runService export;
   	enddo;
 
 	// Or if parametres are given atr the URL
-	GetQryStrList ( name : value : '*FIRST');
+	getQryStrList ( name : value : '*FIRST');
 	dow name > '';
 		strAppend (parmlist : ',' : name + '=>' + strQuot(value));
-		GetQryStrList ( name : value : '*NEXT');
+		getQryStrList ( name : value : '*NEXT');
 	enddo;    
 
 	sqlStmt = 'call ' + schemaName + '.' + procName + ' (' + parmlist + ')';
 
-	pResponse = json_sqlResultSet (sqlStmt);
+	
+	pRows = json_sqlResultSet(
+        sqlStmt: // The sql statement,
+        1:  // from row,
+        -1: // -1=*ALL number of rows
+        JSON_META
+	}
+    
 
 	if json_Error(pResponse);
 		consolelog(sqlStmt);
@@ -428,4 +435,3 @@ dcl-proc tail;
 </html>
 <%
 end-Proc;
-

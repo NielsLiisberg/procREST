@@ -1,6 +1,6 @@
 # procREST - Stored procedures as REST services.
 
-Automatic SQL Stored procedures as RESTfull services 
+Automatic SQL Stored procedures as RESTfull services.
 
 procREST is a simple way to expose Db2 stored procedures as RESTservice on the IBM i. 
 In this examples everything is full open, however you might contain the services 
