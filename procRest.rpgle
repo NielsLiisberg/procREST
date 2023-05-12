@@ -99,6 +99,12 @@ dcl-proc main;
 
 	dcl-s pPayload       pointer;
 
+	if 	%scan ('openapi-meta' : strLower(getUrl())) > 0;
+		listProcForSchema ('QGPL');
+		return;
+	endif;
+
+
 	pPayload = unpackParms();
 	processAction(pPayload);
 	cleanup(pPayload);
@@ -327,6 +333,7 @@ dcl-proc successTrue;
 	return json_parseString ('{"success": true}');
 
 end-proc;
+
 /* -------------------------------------------------------------------- *\ 
    produce HTML catalog
 \* -------------------------------------------------------------------- */
@@ -352,86 +359,234 @@ dcl-proc listProcForSchema;
 		and   a.out_parms = 0 ;
 	`);
 
-	head();
-
-	// Build parameter from posted payload:
-	iterList = json_SetIterator(pResult);
-	dow json_ForEach(iterList);
-
-		if  json_getValue(iterList.this:'routine_schema') <> prevSchema
-		or  json_getValue(iterList.this:'routine_name')   <> prevRoutine;
-			%><tr><td colspan="7"/></tr><tr>
-			<td class="col01"><%= json_getValue(iterList.this:'routine_schema')%></td>    
-			<td class="col02" colspan="5"><%= json_getValue(iterList.this:'routine_name')%></td>    
-			<td class="col07"><%= json_getValue(iterList.this:'desc')%></td>    
-			</tr><%
-		endif;
-		%><tr>
-		<td class="col01"></td>    
-		<td class="col02"></td>    
-		<td class="col03"><%= json_getStr(iterList.this:'parameter_name')%></td>    
-		<td class="col04"><%= json_getStr(iterList.this:'data_type')%></td>    
-		<td class="col05"><%= json_getStr(iterList.this:'character_maximum_length')%></td>    
-		<%if json_getStr(iterList.this:'IS_NULLABLE') = 'YES'; %>    
-			<td class="col06">NO</td>
-		<%else;%>
-			<td class="col06">YES</td>
-		<%endif;%>
-		<td class="col07"><%= json_getValue(iterList.this:'long_comment')%></td>    
-		</tr><%
-		prevSchema  = json_getStr(iterList.this:'routine_schema');
-		prevRoutine = json_getStr(iterList.this:'routine_name');
-  	enddo;
-
-	tail();
+	serverSwagerJson (pResult);
+	json_delete (pResult);
 
 	return formatError ('HTML');
 
 end-proc;
-// --------------------------------------------------------------------------------
-// Setup the HTML header and stylesheet / (evt. the script links)
-// --------------------------------------------------------------------------------
-dcl-proc head;
-	setContentType('text/html');
-%><html>
- <Head>
-	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-	<link rel="stylesheet" type="text/css" href="/System/Styles/portfolio.css"/>
- </head> 
- <body>
- <h1>Auto services for stored procedures</h1>
- <style>
-	.col01{width:80} 
-	.col02{width:300} 
-	.col03{width:300} 
-	.col04{width:200} 
-	.col05{width:80;text-align: right } 
-	.col06{width:80} 
-	.col07{width:800}  
-xxxtr:nth-child(even){
-	background-color: #fafafa;
-}
-</style>
 
-<table id="tab1" >
-	<thead>
-		<tr>
-			<th class="col01">Schema</th>
-			<th class="col02">Procedure</th>
-			<th class="col03">Parameter</th>
-			<th class="col04">Type</th>
-			<th class="col05">Length</th>
-			<th class="col06">Required</th>
-			<th class="col07">Description</th>
-		</tr>
-	</thead>
-<%
+
+// --------------------------------------------------------------------  
+dcl-proc serverSwagerJson;
+
+	dcl-pi *n ;
+		pRoutes pointer value;
+	end-pi;
+
+	dcl-ds iterList likeds(json_iterator);  
+	dcl-s pOpenApi  pointer;
+	dcl-s pRoute 	pointer;
+	dcl-s pPaths  	pointer;
+	dcl-s pParms  	pointer;
+	dcl-s pParm   	pointer;
+	dcl-s pMethod 	pointer;
+	dcl-s pComponents pointer;
+	dcl-s pSchemas   pointer;
+	dcl-s pProperty pointer;
+	dcl-s method 	int(10);
+	dcl-s null  	int(10);
+	dcl-s path 		varchar(256);
+	dcl-s text 		varchar(256);
+	dcl-s ref   	varchar(10) inz('$ref');
+	
+	dcl-s i 		int(5);
+
+	dcl-s  Schema   	varchar(32);
+	dcl-s  Routine 		varchar(32);
+
+
+
+	SetContentType ('application/json');
+
+	pOpenApi = json_parseString(`{
+		"openapi": "3.0.1",
+		"info": {
+			"title": "${ getServerVar('SERVER_DESCRIPTION') }",
+			"version": "${ getServerVar('SERVER_SOFTWARE')}"
+		},
+		"servers": [
+			{
+				"url": "${ getServerVar('SERVER_URI') }",
+				"description": "${ getServerVar('SERVER_SYSTEM_NAME') }"
+			}
+		]
+	}`);
+
+
+	// pOpenApi = json_parsefile ('static/openapi-template.json');
+	pPaths = json_locate( pOpenApi : 'paths');
+	if pPaths = *null;
+		pPaths = json_moveobjectinto  ( pOpenApi  :  'paths' : json_newObject() ); 
+	endif;
+
+	pComponents = json_moveobjectinto  ( pOpenApi     :  'components' : json_newObject()); 
+	pSchemas    = json_moveobjectinto  ( pComponents  :  'schemas' : json_newObject()); 
+
+	// Now produce the menu JSON 
+	iterList = json_setIterator(pRoutes);  
+	dow json_ForEach(iterList) ;  
+
+		//method = json_getInt   ( list.this : 'method' ); 
+		//path   = json_getStr   ( list.this : 'path'   );
+		// text   = json_getStr   ( list.this : 'text'   );
+
+		if  json_getValue(iterList.this:'routine_schema') <> Schema
+		or  json_getValue(iterList.this:'routine_name')   <> Routine;
+
+			// Finish last round trip
+			if Routine > '';
+			endif;
+
+			Schema  = json_getStr(iterList.this:'routine_schema');
+			Routine = json_getStr(iterList.this:'routine_name');
+
+		
+			pRoute = json_newObject();
+			json_noderename (pRoute : '/procrest/qgpl/' + Routine);
+			pMethod = json_parseString(
+			`{
+				"tags": [
+					"${Routine}"
+				],
+				"operationId": "tempura",
+				"summary": "${Routine}",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"${ref}": "#/components/schemas/${Routine}"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"description": "OK",
+						"content": {
+							"application/json": {
+								"schema": {
+									"${ref}": "#/components/schemas/JsonNode"
+								}
+							}
+						}
+					},
+					"403": {
+						"description": "No response from service"
+					},
+					"406": {
+						"description": "Combination of parameters raises a conflict"
+					}
+				}
+			}`);	
+			json_moveobjectinto  ( pRoute  :  'post'  : pMethod ); 
+			json_nodeInsert ( pPaths  : pRoute : JSON_LAST_CHILD); 
+
+			pParms = json_moveobjectinto  ( pSchemas  :  Routine : json_newObject() ); 
+			json_setStr(pParms : 'type' : 'object');
+			pProperty  = json_moveobjectinto  ( pParms  :  'properties' : json_newObject() ); 
+			
+		endif;
+
+		json_nodeInsert ( pProperty  : swaggerParm (iterList.this)  : JSON_LAST_CHILD); 
+
+
+	enddo;	
+
+	responseWriteJson(pOpenApi);
+	json_delete(pOpenApi);
+
+
 end-proc;
-// --------------------------------------------------------------------------------
-// Finish up the final html
-// --------------------------------------------------------------------------------
-dcl-proc tail;
-%></body>
-</html>
-<%
-end-Proc;
+
+// ------------------------------------------------------------------------------------
+// swaggerParm
+// ------------------------------------------------------------------------------------
+dcl-proc swaggerParm;
+
+	dcl-pi swaggerParm pointer ;
+		pMetaParm pointer value;
+	end-pi;
+
+	dcl-s pParm pointer; 
+	dcl-s parmType int(5); 
+	dcl-s unmasked  int(5); 
+	dcl-s mask      int(5); 
+	dcl-s inType varchar(32);
+	
+	/* 
+	parmType =  json_getInt (pMetaParm : 'parmType') ;
+
+	select; 
+		when parmType = RT_PATH;
+			intype = 'path';
+		when parmType = RT_QRYSTR;
+			intype = 'query';
+		when parmType = RT_FORM;
+			intype = 'formData';
+		when parmType = RT_PAYLOAD;
+			intype = 'body';
+		other;
+			intype = 'query';
+	endsl; 
+	*/ 
+
+	pParm = json_newObject(); 
+	json_noderename (pParm : json_getstr (pMetaParm : 'parameter_name'));
+	json_copyValue (pParm : 'name'        : pMetaParm : 'parameter_name' );
+	json_copyValue (pParm : 'description' : pMetaParm : 'long_comment');
+	json_setStr    (pParm : 'type'        : dataTypeJson  (json_getstr (pMetaParm : 'data_type')));
+	json_setStr    (pParm : 'format'      : dataFormatJson(json_getstr (pMetaParm : 'data_type')));
+	json_setBool   (pParm : 'required'    : json_getstr(pMetaParm : 'IS_NULLABLE') <> 'YES' );
+	return pParm;
+end-proc;
+// ------------------------------------------------------------------------------------
+// dataTypeJson
+// ------------------------------------------------------------------------------------
+dcl-proc dataTypeJson;
+
+	dcl-pi *n varchar(32);
+		inputType varchar(32) const;
+	end-pi;
+
+	select; 
+		when %len(inputType) >= 3 and %subst ( strLower (inputType) : 1 : 3)  = 'int';
+			return 'integer';
+		other;
+			return 'string';
+	endsl;
+
+end-proc;
+
+// ------------------------------------------------------------------------------------
+// dataFormatJson
+// ------------------------------------------------------------------------------------
+dcl-proc dataFormatJson;
+
+	dcl-pi *n varchar(32);
+		inputType varchar(32) const;
+	end-pi;
+
+	select; 
+		when %len(inputType) >= 3 and %subst ( strLower (inputType) : 1 : 3)  = 'int';
+			return 'int64';
+		other;
+			return '';
+
+	endsl;
+
+end-proc;
+
+
+// ------------------------------------------------------------------------------------
+// getUrl
+// ------------------------------------------------------------------------------------
+dcl-proc getUrl;
+
+	dcl-pi getUrl varchar(4096);
+	end-pi;
+
+	return '/' + getServerVar('REQUEST_FULL_PATH');
+
+end-proc;
