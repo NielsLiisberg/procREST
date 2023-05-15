@@ -91,36 +91,76 @@ ctl-opt bndDir('NOXDB':'ICEUTILITY':'QC2LE');
 	----------------------------------------------------------------------------- */
  /include qasphdr,jsonparser
  /include qasphdr,iceutility
+
+ dcl-c ROOTPATH '/www/procrest/static'; 
  
 // --------------------------------------------------------------------
 // Main line:
 // --------------------------------------------------------------------
 dcl-proc main;
 
-	dcl-s pPayload       pointer;
+	dcl-s url  			varchar(256);
+	dcl-s environment   varchar(32);
+	dcl-s schemaName    varchar(32);
+	dcl-s procName 		varchar(128);
+	
 
-	if 	%scan ('openapi-meta' : strLower(getUrl())) > 0;
-		listProcForSchema ('QGPL');
-		return;
-	endif;
+	url = getServerVar('REQUEST_FULL_PATH');
+	environment = word (url:1:'/');
+	schemaName  = word (url:2:'/');
+	procName    = word (url:3:'/');
 
+	if  schemaName = 'openapi-meta';
+		serveListSchemaProcs (environment : sesGetvar ('schemaName'));
+	elseif schemaName = 'static_resources' or procName = ''; 
+		serveStatic (schemaName : url);
+	else;
+		serveProcedureResponse (environment : schemaName : procName);
+	endif; 
 
-	pPayload = unpackParms();
-	processAction(pPayload);
-	cleanup(pPayload);
 
 end-proc;
 // --------------------------------------------------------------------  
-dcl-proc processAction;	
+dcl-proc serveStatic;
 
 	dcl-pi *n;
-		pAction pointer value;
+		schemaName varchar(32);
+		url varchar(256);
+	end-pi;
+
+	dcl-s i	int(10);
+	dcl-s fileName varchar(256); 
+
+	i = %scan (schemaName : url );
+	i += %len(schemaName);
+
+	if i >= %len(url);
+		sesSetVar  ('schemaName':schemaName);
+		fileName = ROOTPATH + '/index.html'; 
+	else;		
+		fileName = ROOTPATH + %subst (url : i); 
+	endif;
+
+	SetCharset ('charset=utf-8');
+	ResponseServeFile (fileName);
+
+end-proc;
+
+// --------------------------------------------------------------------  
+dcl-proc serveProcedureResponse ;	
+
+	dcl-pi *n;
+		environment  varchar(32);
+		schema       varchar(32);
+		procName     varchar(128);
 	end-pi;
 	
 	dcl-s pResponse		pointer;		
 	dcl-s msg 			varchar(512);		
 
-	pResponse = runService (pAction);
+	SetContentType ('application/json');
+
+	pResponse = runService (environment : schema : procName);
 	if (pResponse = *NULL);
 		pResponse =  FormatError (
 			'Null object returned from service'
@@ -144,6 +184,7 @@ end-proc;
 /* -------------------------------------------------------------------- *\  
    get data form request
 \* -------------------------------------------------------------------- */
+/**********
 dcl-proc unpackParms;
 
 	dcl-pi *n pointer;
@@ -176,47 +217,24 @@ dcl-proc unpackParms;
 		pPayload = *NULL;
 	endif;
 
-	/*
-	if json_error(pPayload);
-		msg = json_message(pPayload);
-		%>{ "text": "Microservices transactions is ready. Please POST payload in JSON", "desc": "<%= msg %>"}<%
-		return *NULL;
-	endif;
-	*/
 	return pPayload;
 
 
 end-proc;
-// -------------------------------------------------------------------------------------
-dcl-proc cleanup;
-	
-	dcl-pi *n;
-		pPayload pointer value;
-	end-pi;
-	dcl-s callback     	varchar(512);
-
-	json_close(pPayload);
-
-	callback = reqStr('callback');
-	if (callback > '');
-		responseWrite (')');
-	endif;
-
-end-proc;
+*****/ 
 /* -------------------------------------------------------------------- *\ 
    	run a a microservice call
 \* -------------------------------------------------------------------- */
 dcl-proc runService export;	
 
 	dcl-pi *n pointer;
-		pActionIn pointer value options (*string);
+		environment   varchar(32);
+		schemaName    varchar(32);
+		procName	  varchar(128);
 	end-pi;
 	
-	dcl-s Action  		varchar(128);
-	dcl-s schemaName    varchar(10);
-	dcl-s procName 		varchar(128);
-	dcl-s pAction       pointer;
-	dcl-s pResponse		pointer;		
+	dcl-s pResponse		pointer;	
+	dcl-s pPayload      pointer;	
 	dcl-s name  		varchar(64);
 	dcl-s value  		varchar(32760);
 	dcl-s parmList  	varchar(32760);
@@ -226,72 +244,47 @@ dcl-proc runService export;
 	dcl-ds iterParms  	likeds(json_iterator);
 
 
-	// will return the same pointer id action is already a parse object
-	pAction = json_parseString(pActionIn);
-
-	action   = json_GetStr(pAction:'action');
-	if (action <= '');
-		action = strUpper(getServerVar('REQUEST_FULL_PATH'));
-		schemaName  = word (action:2:'/');
-		procName = word (action:3:'/');
-	else;
-
-		//if  action <> prevAction;
-		//	prevAction = action;
-		action = strUpper(action);
-		schemaName  = word (action:1:'.');
-		procName = word (action:2:'.');
-	endif;
-
 	if schemaName <= '';
 		return FormatError (
 			'Need schema and procedure'
 		);
 	endif;
 
-	if procname = '';
-		return listProcForSchema ( schemaName);
-	endif;
-
+	pPayload = json_ParseRequest();
 
 	// Build parameter from posted payload:
-	iterParms = json_SetIterator(pAction);
+	iterParms = json_SetIterator(pPayload);
 	dow json_ForEach(iterParms);
-		if json_getName(iterParms.this) <> 'action';
-			strAppend (parmlist : ',' : json_getName(iterParms.this) + '=>' + strQuot(json_getValue(iterParms.this)));
-		endif;
+		strAppend (parmlist : ',' : camelToSnakeCase(json_getName(iterParms.this)) + '=>' + strQuot(json_getValue(iterParms.this)));
   	enddo;
 
+	/* 
 	// Or if parametres are given atr the URL
 	getQryStrList ( name : value : '*FIRST');
 	dow name > '';
 		strAppend (parmlist : ',' : name + '=>' + strQuot(value));
 		getQryStrList ( name : value : '*NEXT');
 	enddo;    
+	*/ 
 
-	sqlStmt = 'call ' + schemaName + '.' + procName + ' (' + parmlist + ')';
+	sqlStmt = 'call ' + schemaName + '.' + camelToSnakeCase(procName) + ' (' + parmlist + ')';
 
 	
 	pResponse = json_sqlResultSet(
         sqlStmt: // The sql statement,
         1:  // from row,
         -1: // -1=*ALL number of rows
-        JSON_META
+        JSON_META + JSON_CAMEL_CASE
 	);
-    
 
 	if json_Error(pResponse);
 		consolelog(sqlStmt);
 		pResponse= FormatError (
-			'Invalid action or parameter: ' + action 
+			'Invalid action or parameter: '  
 		);
 	endif;
 
-	// if my input was a jsonstring, i did the parse and i have to cleanup
-	if pAction <> pActionIn;
-		json_delete (pAction);
-	endif;
-
+	json_delete ( pPayload);
 	return pResponse; 
 
 end-proc;
@@ -302,7 +295,7 @@ end-proc;
 dcl-proc FormatError;
 
 	dcl-pi *n pointer;
-		description  varchar(256) const options(*VARSIZE);
+		description  varchar(256) const options(*varsize);
 	end-pi;                     
 
 	dcl-s msg 					varchar(4096);
@@ -335,19 +328,23 @@ dcl-proc successTrue;
 end-proc;
 
 /* -------------------------------------------------------------------- *\ 
-   produce HTML catalog
+   produce JSON catalog
 \* -------------------------------------------------------------------- */
-dcl-proc listProcForSchema;
+dcl-proc serveListSchemaProcs;
 
-	dcl-pi *n pointer;
-		schemaName varchar(32) value;
+	dcl-pi *n;
+		environment varchar(32) const options(*varsize);
+		schemaName varchar(32) const options(*varsize);
 	end-pi;
 
-	dcl-s pResult pointer; 
+	dcl-s pResult   pointer; 
+	dcl-s pSwagger  pointer; 
+	
 	dcl-ds iterList  	likeds(json_iterator);
 	dcl-s  prevSchema   	varchar(32);
 	dcl-s  prevRoutine 		varchar(32);
  
+
 
 	pResult = json_sqlResultSet (`
 		Select a.routine_schema , a.routine_name, a.long_comment as desc, b.*
@@ -359,18 +356,19 @@ dcl-proc listProcForSchema;
 		and   a.out_parms = 0 ;
 	`);
 
-	serverSwagerJson (pResult);
-	json_delete (pResult);
+	SetContentType ('application/json');
+	pSwagger = buildSwaggerJson (environment : pResult);
+	responseWriteJson(pSwagger);
 
-	return formatError ('HTML');
+	json_delete (pResult);
+	json_delete (pSwagger);
 
 end-proc;
-
-
 // --------------------------------------------------------------------  
-dcl-proc serverSwagerJson;
+dcl-proc buildSwaggerJson;
 
-	dcl-pi *n ;
+	dcl-pi *n pointer;
+		environment varchar(32) const options(*varsize);
 		pRoutes pointer value;
 	end-pi;
 
@@ -389,6 +387,8 @@ dcl-proc serverSwagerJson;
 	dcl-s path 		varchar(256);
 	dcl-s text 		varchar(256);
 	dcl-s ref   	varchar(10) inz('$ref');
+	dcl-s prevSchemaRoutine varchar(256);
+	dcl-s schemaRoutine varchar(256);
 	
 	dcl-s i 		int(5);
 
@@ -396,8 +396,7 @@ dcl-proc serverSwagerJson;
 	dcl-s  Routine 		varchar(32);
 
 
-
-	SetContentType ('application/json');
+	/// SetContentType ('application/json');
 
 	pOpenApi = json_parseString(`{
 		"openapi": "3.0.1",
@@ -427,29 +426,20 @@ dcl-proc serverSwagerJson;
 	iterList = json_setIterator(pRoutes);  
 	dow json_ForEach(iterList) ;  
 
-		//method = json_getInt   ( list.this : 'method' ); 
-		//path   = json_getStr   ( list.this : 'path'   );
-		// text   = json_getStr   ( list.this : 'text'   );
+		Schema =  snakeToCamelCase (json_getValue(iterList.this:'routine_schema'));
+		Routine = snakeToCamelCase (json_getValue(iterList.this:'routine_name')); 
+		SchemaRoutine =  Schema + '/' + Routine;
 
-		if  json_getValue(iterList.this:'routine_schema') <> Schema
-		or  json_getValue(iterList.this:'routine_name')   <> Routine;
-
-			// Finish last round trip
-			if Routine > '';
-			endif;
-
-			Schema  = json_getStr(iterList.this:'routine_schema');
-			Routine = json_getStr(iterList.this:'routine_name');
-
-		
+		if  SchemaRoutine <> prevSchemaRoutine;
+			prevSchemaRoutine = SchemaRoutine;
 			pRoute = json_newObject();
-			json_noderename (pRoute : '/procrest/qgpl/' + Routine);
+			json_noderename (pRoute : '/' + environment + '/' + SchemaRoutine);
 			pMethod = json_parseString(
 			`{
 				"tags": [
 					"${Routine}"
 				],
-				"operationId": "tempura",
+				"operationId": 	"${environment}",
 				"summary": "${Routine}",
 				"requestBody": {
 					"content": {
@@ -467,7 +457,7 @@ dcl-proc serverSwagerJson;
 						"content": {
 							"application/json": {
 								"schema": {
-									"${ref}": "#/components/schemas/JsonNode"
+									"${ref}": "#/definitions/ApiResponse"
 								}
 							}
 						}
@@ -477,6 +467,17 @@ dcl-proc serverSwagerJson;
 					},
 					"406": {
 						"description": "Combination of parameters raises a conflict"
+					},
+					"500": {
+						"description": "Internal error",
+						"content": {
+							"application/json": {
+								"schema": {
+									"${ref}": "#/definitions/error"
+								}
+							}
+						}
+
 					}
 				}
 			}`);	
@@ -494,12 +495,63 @@ dcl-proc serverSwagerJson;
 
 	enddo;	
 
-	responseWriteJson(pOpenApi);
-	json_delete(pOpenApi);
+
+	json_moveobjectinto  ( pOpenApi  :  'definitions' : definitions()  ); 
+
+	return (pOpenApi);
 
 
 end-proc;
 
+// ------------------------------------------------------------------------------------
+// definitions
+// ------------------------------------------------------------------------------------
+dcl-proc definitions;
+
+	dcl-pi definitions pointer;
+	end-pi;
+
+	return json_parseString( `
+	{
+		"ApiResponse": {
+			"type": "object",
+			"properties": {
+				"success": {
+					"type": "boolean",
+				},
+				"root": {
+					"type": "string"
+				},
+				"metaData": {
+					"type": "object"
+				},
+				"rows": {
+					"type" : "array",
+					"items": {
+                        "type": "object"
+                    }
+
+				}
+			}
+		},
+		"error": {
+			"type": "object",
+			"properties": {
+				"success": {
+					"type": "boolean",
+					"default": false
+				},
+				"description": {
+					"type": "string"
+				},
+				"message": {
+					"type": "string"
+				}
+			}
+		}
+	}`);
+
+end-proc;
 // ------------------------------------------------------------------------------------
 // swaggerParm
 // ------------------------------------------------------------------------------------
@@ -511,35 +563,71 @@ dcl-proc swaggerParm;
 
 	dcl-s pParm pointer; 
 	dcl-s parmType int(5); 
-	dcl-s unmasked  int(5); 
-	dcl-s mask      int(5); 
-	dcl-s inType varchar(32);
+	dcl-s name varchar(32);
 	
-	/* 
-	parmType =  json_getInt (pMetaParm : 'parmType') ;
-
-	select; 
-		when parmType = RT_PATH;
-			intype = 'path';
-		when parmType = RT_QRYSTR;
-			intype = 'query';
-		when parmType = RT_FORM;
-			intype = 'formData';
-		when parmType = RT_PAYLOAD;
-			intype = 'body';
-		other;
-			intype = 'query';
-	endsl; 
-	*/ 
+	name = snakeToCamelCase(json_getstr (pMetaParm : 'parameter_name') );
 
 	pParm = json_newObject(); 
-	json_noderename (pParm : json_getstr (pMetaParm : 'parameter_name'));
-	json_copyValue (pParm : 'name'        : pMetaParm : 'parameter_name' );
+	json_noderename (pParm : name );
+	json_setStr    (pParm : 'name'        : name);
 	json_copyValue (pParm : 'description' : pMetaParm : 'long_comment');
 	json_setStr    (pParm : 'type'        : dataTypeJson  (json_getstr (pMetaParm : 'data_type')));
 	json_setStr    (pParm : 'format'      : dataFormatJson(json_getstr (pMetaParm : 'data_type')));
 	json_setBool   (pParm : 'required'    : json_getstr(pMetaParm : 'IS_NULLABLE') <> 'YES' );
 	return pParm;
+
+end-proc;
+
+// ------------------------------------------------------------------------------------
+// snakeToCamelCase
+// ------------------------------------------------------------------------------------
+dcl-proc snakeToCamelCase;
+
+	dcl-pi snakeToCamelCase varchar(256) ;
+		text varchar(256) const options(*varsize);
+	end-pi;
+
+	dcl-s temp varchar(256);
+	dcl-s i int(5);
+
+	temp = strLower (text); 
+
+	for i = 1 to %len(temp); 
+		if %subst(temp: i : 1) = '_';
+			 %subst(temp: i ) = %subst(temp: i +1);
+			 %subst(temp: i : 1) = strUpper(%subst(temp: i : 1));
+		endif;
+	endfor; 
+
+	return %trimr(temp);
+
+end-proc;
+// ------------------------------------------------------------------------------------
+// camelToSnakeCase
+// ------------------------------------------------------------------------------------
+dcl-proc camelToSnakeCase;
+
+	dcl-pi *n varchar(256) ;
+		text varchar(256) const options(*varsize);
+	end-pi;
+
+	dcl-s low  varchar(256);
+	dcl-s temp varchar(256);
+	dcl-s i int(5);
+
+	temp = '';
+	low  = strLower  (text); 
+
+	for i = 1 to %len(text);
+		if %subst(text: i : 1) <> %subst(low: i : 1) ;
+			temp +=  '_' + %subst(low: i : 1);
+		else; 
+			temp += %subst(text : i : 1);
+		endif;
+	endfor; 
+
+	return temp;
+
 end-proc;
 // ------------------------------------------------------------------------------------
 // dataTypeJson
@@ -547,7 +635,7 @@ end-proc;
 dcl-proc dataTypeJson;
 
 	dcl-pi *n varchar(32);
-		inputType varchar(32) const;
+		inputType varchar(32) const options(*varsize);
 	end-pi;
 
 	select; 
@@ -565,7 +653,7 @@ end-proc;
 dcl-proc dataFormatJson;
 
 	dcl-pi *n varchar(32);
-		inputType varchar(32) const;
+		inputType varchar(32) const options(*varsize);
 	end-pi;
 
 	select; 
@@ -578,15 +666,3 @@ dcl-proc dataFormatJson;
 
 end-proc;
 
-
-// ------------------------------------------------------------------------------------
-// getUrl
-// ------------------------------------------------------------------------------------
-dcl-proc getUrl;
-
-	dcl-pi getUrl varchar(4096);
-	end-pi;
-
-	return '/' + getServerVar('REQUEST_FULL_PATH');
-
-end-proc;
